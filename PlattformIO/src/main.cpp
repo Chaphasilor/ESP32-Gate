@@ -1,9 +1,10 @@
 #include <Arduino.h>
-/*
-    Based on Neil Kolban example for IDF: https://github.com/nkolban/esp32-snippets/blob/master/cpp_utils/tests/BLE%20Tests/SampleServer.cpp
-    Ported to Arduino ESP32 by Evandro Copercini
-    updates by chegewara
-*/
+
+// BME280 ---------------------------------
+
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
 
 // Bluetooth LE ---------------------------
 
@@ -185,11 +186,8 @@ class Gate: public BLECharacteristicCallbacks { // characteristic event handlers
   }
 };
 
-// Transmitter --------------------
 
-// #include "RCSwitch.h"
-//
-// RCSwitch gateTransmitter = RCSwitch();
+Adafruit_BME280 bme;
 
 void setup() {
   Serial.begin(115200);
@@ -248,11 +246,11 @@ void setup() {
   pinMode(gatePin, OUTPUT);
   digitalWrite(gatePin, LOW);
 
-  // gateTransmitter.enableTransmit(gatePin);    // Hier ist der Sende-Pin GPIO14 für den 868 Mhz Transmitter
-  // gateTransmitter.setProtocol(1);
-  // gateTransmitter.setPulseLength(1000);//  1ms, gemessen/probiert
-  // gateTransmitter.setRepeatTransmit(1);   // 1 ist Minimum
-
+  // BME280 -----------------------------
+  
+  if (!bme.begin(0x76)) {
+    Serial.println("Sensor not found!");
+  }
 
 }
 
@@ -268,6 +266,7 @@ void loop() {
       pTemp->setValue(newTemp);
     }
     currentTemp = newTemp;
+    Serial.println(bme.readTemperature());
   } else {
     // digitalWrite(2, LOW);
   }
