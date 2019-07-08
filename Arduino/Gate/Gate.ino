@@ -1,11 +1,5 @@
 #include <Arduino.h>
 
-// BME280 ---------------------------------
-
-#include <Wire.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BME280.h>
-
 // Bluetooth LE ---------------------------
 
 #include <BLEDevice.h>
@@ -21,16 +15,30 @@ bool deviceConnected = false;
 BLEServer *pServer;
 BLEService *pTempService;
 BLECharacteristic *pTemp, *pTempType, *pLED, *pGate;
-float currentTemp;
+float currentTempFloat;
+int currentTempInt;
+
+void updateTemperature() {
+  currentTempFloat = temperatureRead();
+  currentTempInt = static_cast<int>(currentTempFloat*100);
+  pTemp->setValue(currentTempInt);
+}
 
 class ServerCallbacks: public BLEServerCallbacks { // server/connection event handlers
     void onConnect(BLEServer* pServer) {
+      updateTemperature();
       deviceConnected = true;
     };
 
     void onDisconnect(BLEServer* pServer) {
       deviceConnected = false;
     }
+};
+
+class TempCallbacks: public BLECharacteristicCallbacks { // characteristic event handlers
+  void onRead() {
+    updateTemperature();
+  }
 };
 
 class LEDCallbacks: public BLECharacteristicCallbacks { // characteristic event handlers
@@ -172,28 +180,25 @@ void sendTransmission() { // Funktelplaegramm für Gartentor
     }
 }
 
-class Gate: public BLECharacteristicCallbacks { // characteristic event handlers
+class GateCallbacks: public BLECharacteristicCallbacks { // characteristic event handlers
   void onWrite(BLECharacteristic *pCharacteristic) {
     std::string value = pCharacteristic->getValue();
     if (value == "trigger") {
-      // digitalWrite(2, HIGH);
+      digitalWrite(2, HIGH);
       sendTransmission();
+      digitalWrite(2, LOW);
       Serial.println("Gate was triggered");
     } else {
-      // digitalWrite(2, LOW);
       Serial.println("Gate was NOT triggered");
     }
   }
 };
 
-
-Adafruit_BME280 bme;
-
 void setup() {
   Serial.begin(115200);
 
   // Bluetooth LE -----------------
-  Serial.println("Starting BLE work!");
+  Serial.println("Starting BLE server!");
 
   BLEDevice::setPower(ESP_PWR_LVL_P7);
   BLEDevice::init("Gate");
@@ -201,23 +206,19 @@ void setup() {
   pServer->setCallbacks(new ServerCallbacks()); // define event handling
 
   pTempService = pServer->createService(BLEUUID((uint16_t)0x1809));
-  // BLECharacteristic *pTempMeasure = pTempService->createCharacteristic(BLEUUID((uint16_t)0x2A1C), BLECharacteristic::PROPERTY_READ);
   pTemp = pTempService->createCharacteristic(BLEUUID((uint16_t)0x2A6E), BLECharacteristic::PROPERTY_READ);
+  pTemp->setCallbacks(new TempCallbacks());
   pTempType = pTempService->createCharacteristic(BLEUUID((uint16_t)0x2A1D), BLECharacteristic::PROPERTY_READ);
 
   pLED = pTempService->createCharacteristic(BLEUUID((uint16_t)0x25CD), BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
   pLED->setCallbacks(new LEDCallbacks()); // define event handling
   pGate = pTempService->createCharacteristic(BLEUUID((uint16_t)0xD64C), BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
-  pGate->setCallbacks(new Gate()); // define event handling
+  pGate->setCallbacks(new GateCallbacks()); // define event handling
 
   int typeKey = 1; // Armpit
   pTempType->setValue(typeKey);
   int currentTemp = 3690;
   pTemp->setValue(currentTemp);
-  // int flags = 4; // 8Bit: 00000100 => 2nd Bit set to 1 => include temp type
-  // int measuredTemp = 37.2;
-  // int tempMeasureValue [3] = {flags, measuredTemp, typeKey};
-  // pTempMeasure->setValue(tempMeasureValue);
   pLED->setValue("off");
   pGate->setValue("null");
 
@@ -227,8 +228,6 @@ void setup() {
   pTempService->addCharacteristic(pGate);
   pTempService->start();
 
-
-  // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // this still is working for backward compatibility
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->addServiceUUID(BLEUUID((uint16_t)0x1809));
@@ -236,7 +235,7 @@ void setup() {
   pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
   pAdvertising->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
-  Serial.println("Characteristic defined! Now you can read it in your phone!");
+  Serial.println("Server initialized successfully!");
 
   pinMode(2, OUTPUT);
   digitalWrite(2, LOW);
@@ -246,35 +245,20 @@ void setup() {
   pinMode(gatePin, OUTPUT);
   digitalWrite(gatePin, LOW);
 
-  // BME280 -----------------------------
-  
-  if (!bme.begin(0x76)) {
-    Serial.println("Sensor not found!");
-  }
-
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
 
   if (deviceConnected) {
-    // digitalWrite(2, HIGH);
-    int newTemp = static_cast<int>(temperatureRead()*100);
-    if (currentTemp != newTemp) {
-      Serial.print("Setting temp to: ");
-      Serial.println(newTemp);
-      pTemp->setValue(newTemp);
-    }
-    currentTemp = newTemp;
-    Serial.println(bme.readTemperature());
+    Serial.println("A client is currently connected");
+    Serial.print("Current temperature: ");
+    Serial.print(currentTempFloat);
+    Serial.println("°C");
   } else {
-    // digitalWrite(2, LOW);
+    Serial.println("No client connected");
   }
 
-  // Serial.print("Current temp: ");
-  // Serial.print(currentTemp);
-  // Serial.println("C");
-
-  delay(5000);
-
+  delay(2000);
+  
 }
